@@ -4,6 +4,9 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
 
+typedef JsonMap = Map<String, dynamic>;
+typedef JsonList = List<JsonMap>;
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await MobileAds.instance.initialize();
@@ -45,11 +48,11 @@ class _HomeScreenState extends State<HomeScreen> {
   static const String _bannerAdUnitId =
       'ca-app-pub-3940256099942544/6300978111';
 
-  Map<String, dynamic>? _personData;
+  JsonMap? _personData;
   bool _isLoading = true;
   String? _errorMessage;
   bool _isCollected = false;
-  List> _historyList = [];
+  JsonList _historyList = [];
 
   BannerAd? _bannerAd;
   bool _isBannerLoaded = false;
@@ -99,24 +102,26 @@ class _HomeScreenState extends State<HomeScreen> {
 
       final historyRaw = prefs.getString('person_history');
       if (historyRaw != null) {
-        final decoded = jsonDecode(historyRaw) as List<dynamic>;
-        _historyList = decoded
-            .map((e) => Map<String, dynamic>.from(e as Map))
-            .toList();
+        final decoded = jsonDecode(historyRaw);
+        if (decoded is Iterable) {
+          _historyList = decoded
+              .map((e) => JsonMap.from(e as Map))
+              .toList();
+        }
       }
 
       final cachedDate = prefs.getString('cached_person_date');
       final cachedJson = prefs.getString('cached_person_json');
 
-      Map<String, dynamic> data;
+      JsonMap data;
       if (cachedDate == todayKst && cachedJson != null) {
-        data = Map<String, dynamic>.from(jsonDecode(cachedJson) as Map);
+        data = JsonMap.from(jsonDecode(cachedJson) as Map);
       } else {
         final response = await http.get(Uri.parse(_dataUrl));
         if (response.statusCode != 200) {
           throw Exception('HTTP ${response.statusCode}');
         }
-        data = Map<String, dynamic>.from(
+        data = JsonMap.from(
           jsonDecode(utf8.decode(response.bodyBytes)) as Map,
         );
 
@@ -359,9 +364,9 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _buildPersonCard() {
     final data = _personData!;
     final rawAchievements = data['achievements'];
-    final achievements = rawAchievements is List
+    final achievements = rawAchievements is Iterable
         ? rawAchievements.map((e) => e.toString()).toList()
-        : <String>[];
+        : const <String>[];
     final quoteOriginal = data['quote_original']?.toString().trim() ?? '';
     final quoteKo = data['quote_ko']?.toString().trim() ?? '';
 
