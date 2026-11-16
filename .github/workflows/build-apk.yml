@@ -92,6 +92,9 @@ jobs:
       - name: 패키지 설치
         run: flutter pub get
 
+      - name: Dart 코드 문법 검사
+        run: flutter analyze
+         
       - name: APK 빌드 (Lint 태스크 제외)
         run: |
           flutter build apk --release --config-only
