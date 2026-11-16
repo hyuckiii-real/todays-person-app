@@ -23,7 +23,7 @@ jobs:
           channel: 'stable'
           cache: true
 
-      - name: 안드로이드 플랫폼 복원 및 AdMob 세팅
+      - name: 안드로이드 플랫폼 복원 및 AdMob 지연 초기화 세팅
         run: |
           flutter create . --org com.todaysx --platforms=android --project-name todays_person
           rm -rf test
@@ -63,6 +63,9 @@ jobs:
                   <meta-data
                       android:name="com.google.android.gms.ads.APPLICATION_ID"
                       android:value="ca-app-pub-3940256099942544~3347511713"/>
+                  <meta-data
+                      android:name="com.google.android.gms.ads.DELAY_APP_MEASUREMENT_INIT"
+                      android:value="true"/>
               </application>
               <queries>
                   <intent>
@@ -95,7 +98,7 @@ jobs:
 
       - name: Dart 코드 문법 검사
         run: flutter analyze --no-fatal-infos
-         
+
       - name: APK 빌드 (Lint 태스크 제외)
         run: |
           flutter build apk --release --config-only
