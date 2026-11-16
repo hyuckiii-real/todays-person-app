@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
@@ -7,9 +8,8 @@ import 'package:google_mobile_ads/google_mobile_ads.dart';
 typedef JsonMap = Map<String, dynamic>;
 typedef JsonList = List<JsonMap>;
 
-void main() async {
+void main() {
   WidgetsFlutterBinding.ensureInitialized();
-  await MobileAds.instance.initialize();
   runApp(const TodaysPersonApp());
 }
 
@@ -42,8 +42,11 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  static const String _dataUrl =
-    'https://cdn.jsdelivr.net/gh/hyuckiii-real/todays-person-data@main/today.json';
+  // 1순위: 초고속 CDN 주소 / 2순위: GitHub Raw 원본 주소
+  static const String _cdnUrl =
+      'https://cdn.jsdelivr.net/gh/hyuckiii-real/todays-person-data@main/today.json';
+  static const String _rawUrl =
+      'https://raw.githubusercontent.com/hyuckiii-real/todays-person-data/main/today.json';
 
   static const String _bannerAdUnitId =
       'ca-app-pub-3940256099942544/6300978111';
@@ -60,26 +63,32 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
-    _loadBannerAd();
-    _loadPersonData();
+    _initPersonDataFast();
+    _initAdMobDelayed();
   }
 
-  void _loadBannerAd() {
-    _bannerAd = BannerAd(
-      adUnitId: _bannerAdUnitId,
-      size: AdSize.banner,
-      request: const AdRequest(),
-      listener: BannerAdListener(
-        onAdLoaded: (_) {
-          if (mounted) {
-            setState(() => _isBannerLoaded = true);
-          }
-        },
-        onAdFailedToLoad: (ad, error) {
-          ad.dispose();
-        },
-      ),
-    )..load();
+  // 앱 화면 진입과 초기 렌더링이 완전히 끝난 2초 뒤에 애드몹 초기화
+  Future<void> _initAdMobDelayed() async {
+    try {
+      await Future.delayed(const Duration(seconds: 2));
+      await MobileAds.instance.initialize();
+      if (!mounted) return;
+      _bannerAd = BannerAd(
+        adUnitId: _bannerAdUnitId,
+        size: AdSize.banner,
+        request: const AdRequest(),
+        listener: BannerAdListener(
+          onAdLoaded: (_) {
+            if (mounted) {
+              setState(() => _isBannerLoaded = true);
+            }
+          },
+          onAdFailedToLoad: (ad, error) {
+            ad.dispose();
+          },
+        ),
+      )..load();
+    } catch (_) {}
   }
 
   String _getTodayKstString() {
@@ -90,69 +99,104 @@ class _HomeScreenState extends State<HomeScreen> {
     return '$y-$m-$d';
   }
 
-  Future<void> _loadPersonData() async {
-    setState(() {
-      _isLoading = true;
-      _errorMessage = null;
-    });
+  Future<void> _initPersonDataFast() async {
+    final prefs = await SharedPreferences.getInstance();
+    final todayKst = _getTodayKstString();
 
+    final historyRaw = prefs.getString('person_history');
+    if (historyRaw != null) {
+      final decoded = jsonDecode(historyRaw);
+      if (decoded is Iterable) {
+        _historyList = decoded.map((e) => JsonMap.from(e as Map)).toList();
+      }
+    }
+
+    final cachedDate = prefs.getString('cached_person_date');
+    final cachedJson = prefs.getString('cached_person_json');
+
+    if (cachedJson != null) {
+      final cachedData = JsonMap.from(jsonDecode(cachedJson) as Map);
+      final idx = _historyList
+          .indexWhere((item) => item['date'] == cachedData['date']);
+      if (mounted) {
+        setState(() {
+          _personData = cachedData;
+          _isCollected = idx != -1 && _historyList[idx]['collected'] == true;
+          _isLoading = false;
+        });
+      }
+      if (cachedDate == todayKst) {
+        return;
+      }
+    }
+
+    await _fetchLatestPerson(prefs, todayKst);
+  }
+
+  Future<http.Response> _requestWithFallback() async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final todayKst = _getTodayKstString();
+      final res = await http
+          .get(Uri.parse(_cdnUrl))
+          .timeout(const Duration(seconds: 3));
+      if (res.statusCode == 200) return res;
+    } catch (_) {}
 
-      final historyRaw = prefs.getString('person_history');
-      if (historyRaw != null) {
-        final decoded = jsonDecode(historyRaw);
-        if (decoded is Iterable) {
-          _historyList = decoded
-              .map((e) => JsonMap.from(e as Map))
-              .toList();
-        }
+    return await http
+        .get(Uri.parse(_rawUrl))
+        .timeout(const Duration(seconds: 5));
+  }
+
+  Future<void> _fetchLatestPerson(
+      SharedPreferences prefs, String todayKst) async {
+    try {
+      final response = await _requestWithFallback();
+      if (response.statusCode != 200) {
+        throw Exception('HTTP ${response.statusCode}');
       }
 
-      final cachedDate = prefs.getString('cached_person_date');
-      final cachedJson = prefs.getString('cached_person_json');
+      final data = JsonMap.from(
+        jsonDecode(utf8.decode(response.bodyBytes)) as Map,
+      );
 
-      JsonMap data;
-      if (cachedDate == todayKst && cachedJson != null) {
-        data = JsonMap.from(jsonDecode(cachedJson) as Map);
-      } else {
-        final response = await http.get(Uri.parse(_dataUrl));
-        if (response.statusCode != 200) {
-          throw Exception('HTTP ${response.statusCode}');
-        }
-        data = JsonMap.from(
-          jsonDecode(utf8.decode(response.bodyBytes)) as Map,
-        );
-
-        await prefs.setString('cached_person_date', todayKst);
-        await prefs.setString('cached_person_json', jsonEncode(data));
-      }
+      await prefs.setString('cached_person_date', todayKst);
+      await prefs.setString('cached_person_json', jsonEncode(data));
 
       final existsIdx =
           _historyList.indexWhere((item) => item['date'] == data['date']);
+      bool collectedState = false;
       if (existsIdx == -1) {
         data['collected'] = false;
         _historyList.insert(0, data);
         await prefs.setString('person_history', jsonEncode(_historyList));
       } else {
-        _isCollected = _historyList[existsIdx]['collected'] == true;
+        collectedState = _historyList[existsIdx]['collected'] == true;
       }
 
       if (mounted) {
         setState(() {
           _personData = data;
+          _isCollected = collectedState;
           _isLoading = false;
+          _errorMessage = null;
         });
       }
-    } catch (e) {
-      if (mounted) {
+    } catch (_) {
+      if (mounted && _personData == null) {
         setState(() {
           _errorMessage = '오늘의 인물을 불러오는 중 오류가 발생했습니다.\n인터넷 연결을 확인해 주세요.';
           _isLoading = false;
         });
       }
     }
+  }
+
+  Future<void> _retryLoad() async {
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+    final prefs = await SharedPreferences.getInstance();
+    await _fetchLatestPerson(prefs, _getTodayKstString());
   }
 
   Future<void> _toggleCollected() async {
@@ -325,7 +369,7 @@ class _HomeScreenState extends State<HomeScreen> {
         children: [
           Expanded(
             child: _isLoading
-                ? const Center(child: CircularProgressIndicator())
+                ? _buildBrandIntroLoading()
                 : _errorMessage != null
                     ? Center(
                         child: Padding(
@@ -340,7 +384,7 @@ class _HomeScreenState extends State<HomeScreen> {
                               ),
                               const SizedBox(height: 16),
                               ElevatedButton(
-                                onPressed: _loadPersonData,
+                                onPressed: _retryLoad,
                                 child: const Text('다시 시도'),
                               ),
                             ],
@@ -357,6 +401,56 @@ class _HomeScreenState extends State<HomeScreen> {
               child: AdWidget(ad: _bannerAd!),
             ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildBrandIntroLoading() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(18),
+              decoration: BoxDecoration(
+                color: const Color(0xFFE0E7FF),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: const Icon(
+                Icons.person_search_rounded,
+                size: 40,
+                color: Color(0xFF3730A3),
+              ),
+            ),
+            const SizedBox(height: 20),
+            const Text(
+              '오늘의 인물',
+              style: TextStyle(
+                fontSize: 22,
+                fontWeight: FontWeight.w800,
+                color: Color(0xFF0F172A),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              '하루 한 명, 세상을 바꾼 인물을 만나는 시간',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 14,
+                color: Colors.grey.shade600,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+            const SizedBox(height: 24),
+            const SizedBox(
+              width: 24,
+              height: 24,
+              child: CircularProgressIndicator(strokeWidth: 2.5),
+            ),
+          ],
+        ),
       ),
     );
   }
