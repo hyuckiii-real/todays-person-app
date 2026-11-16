@@ -43,7 +43,7 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   static const String _dataUrl =
-      'https://raw.githubusercontent.com/hyuckiii-real/todays-person-data/main/today.json';
+    'https://cdn.jsdelivr.net/gh/hyuckiii-real/todays-person-data@main/today.json';
 
   static const String _bannerAdUnitId =
       'ca-app-pub-3940256099942544/6300978111';
