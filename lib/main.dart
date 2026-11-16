@@ -42,7 +42,6 @@ class _HomeScreenState extends State<HomeScreen> {
   static const String _dataUrl =
       'https://raw.githubusercontent.com/hyuckiii-real/todays-person-data/main/today.json';
 
-  // Google 공식 Android 테스트 배너 ID (출시 직전 실제 AdMob 배너 ID로 교체)
   static const String _bannerAdUnitId =
       'ca-app-pub-3940256099942544/6300978111';
 
@@ -98,32 +97,33 @@ class _HomeScreenState extends State<HomeScreen> {
       final prefs = await SharedPreferences.getInstance();
       final todayKst = _getTodayKstString();
 
-      // 저장된 히스토리 로드
       final historyRaw = prefs.getString('person_history');
       if (historyRaw != null) {
         final decoded = jsonDecode(historyRaw) as List<dynamic>;
-        _historyList = decoded.cast>();
+        _historyList = decoded
+            .map((e) => Map<String, dynamic>.from(e as Map))
+            .toList();
       }
 
-      // 오늘 날짜 캐시 확인 (하루 1명 고정 노출)
       final cachedDate = prefs.getString('cached_person_date');
       final cachedJson = prefs.getString('cached_person_json');
 
       Map<String, dynamic> data;
       if (cachedDate == todayKst && cachedJson != null) {
-        data = jsonDecode(cachedJson) as Map<String, dynamic>;
+        data = Map<String, dynamic>.from(jsonDecode(cachedJson) as Map);
       } else {
         final response = await http.get(Uri.parse(_dataUrl));
         if (response.statusCode != 200) {
-          throw Exception('데이터를 불러오지 못했습니다 (${response.statusCode})');
+          throw Exception('HTTP ${response.statusCode}');
         }
-        data = jsonDecode(utf8.decode(response.bodyBytes)) as Map<String, dynamic>;
+        data = Map<String, dynamic>.from(
+          jsonDecode(utf8.decode(response.bodyBytes)) as Map,
+        );
 
         await prefs.setString('cached_person_date', todayKst);
         await prefs.setString('cached_person_json', jsonEncode(data));
       }
 
-      // 히스토리에 오늘 인물이 없으면 자동 기록 (출석 열람 히스토리)
       final existsIdx =
           _historyList.indexWhere((item) => item['date'] == data['date']);
       if (existsIdx == -1) {
@@ -168,7 +168,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _openHistorySheet() {
-    showModalBottomSheet(
+    showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.white,
@@ -243,7 +243,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                       : Colors.grey.shade400,
                                 ),
                                 title: Text(
-                                  item['name'] ?? '',
+                                  item['name']?.toString() ?? '',
                                   style: const TextStyle(
                                     fontWeight: FontWeight.bold,
                                     fontSize: 15,
@@ -276,7 +276,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final todayDisplay = _personData?['date'] ?? _getTodayKstString();
+    final todayDisplay =
+        _personData?['date']?.toString() ?? _getTodayKstString();
 
     return Scaffold(
       appBar: AppBar(
@@ -306,8 +307,10 @@ class _HomeScreenState extends State<HomeScreen> {
         actions: [
           IconButton(
             onPressed: _openHistorySheet,
-            icon: const Icon(Icons.auto_stories_outlined,
-                color: Color(0xFF1E293B)),
+            icon: const Icon(
+              Icons.auto_stories_outlined,
+              color: Color(0xFF1E293B),
+            ),
             tooltip: '내 인물 도감',
           ),
           const SizedBox(width: 8),
@@ -355,10 +358,12 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _buildPersonCard() {
     final data = _personData!;
-    final achievements =
-        (data['achievements'] as List<dynamic>?)?.cast<String>() ?? [];
-    final quoteOriginal = (data['quote_original'] as String?)?.trim() ?? '';
-    final quoteKo = (data['quote_ko'] as String?)?.trim() ?? '';
+    final rawAchievements = data['achievements'];
+    final achievements = rawAchievements is List
+        ? rawAchievements.map((e) => e.toString()).toList()
+        : <String>[];
+    final quoteOriginal = data['quote_original']?.toString().trim() ?? '';
+    final quoteKo = data['quote_ko']?.toString().trim() ?? '';
 
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(18, 8, 18, 24),
@@ -370,7 +375,7 @@ class _HomeScreenState extends State<HomeScreen> {
           borderRadius: BorderRadius.circular(24),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.05),
+              color: Colors.black.withValues(alpha: 0.05),
               blurRadius: 16,
               offset: const Offset(0, 6),
             ),
@@ -379,28 +384,25 @@ class _HomeScreenState extends State<HomeScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // 상단 테마 & 분야 배지
             Wrap(
               spacing: 8,
               runSpacing: 6,
               children: [
                 _buildBadge(
-                  data['theme'] ?? '오늘의 테마',
+                  data['theme']?.toString() ?? '오늘의 테마',
                   const Color(0xFFE0E7FF),
                   const Color(0xFF3730A3),
                 ),
                 _buildBadge(
-                  data['category'] ?? '',
+                  data['category']?.toString() ?? '',
                   const Color(0xFFF1F5F9),
                   const Color(0xFF475569),
                 ),
               ],
             ),
             const SizedBox(height: 16),
-
-            // 인물 이름 & 생몰연도
             Text(
-              data['name'] ?? '',
+              data['name']?.toString() ?? '',
               style: const TextStyle(
                 fontSize: 25,
                 fontWeight: FontWeight.w800,
@@ -410,7 +412,7 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
             const SizedBox(height: 4),
             Text(
-              data['lifespan'] ?? '',
+              data['lifespan']?.toString() ?? '',
               style: TextStyle(
                 fontSize: 14,
                 color: Colors.grey.shade600,
@@ -418,8 +420,6 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
             const SizedBox(height: 12),
-
-            // 강렬한 한 줄 요약
             Container(
               width: double.infinity,
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
@@ -438,12 +438,10 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
             const SizedBox(height: 18),
-
-            // 왜 오늘 이 인물인가?
             _buildSectionTitle('📌 왜 오늘 이 인물일까?'),
             const SizedBox(height: 6),
             Text(
-              data['why_today'] ?? '',
+              data['why_today']?.toString() ?? '',
               style: const TextStyle(
                 fontSize: 14.5,
                 height: 1.55,
@@ -451,8 +449,6 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
             const Divider(height: 28),
-
-            // 핵심 업적 3가지
             _buildSectionTitle('🏆 핵심 업적'),
             const SizedBox(height: 8),
             ...achievements.map(
@@ -484,8 +480,6 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
             const Divider(height: 28),
-
-            // 대표 어록 / 핵심 철학
             _buildSectionTitle('💬 남긴 말'),
             const SizedBox(height: 8),
             Container(
@@ -523,12 +517,10 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
             const SizedBox(height: 18),
-
-            // 의외의 TMI
             _buildSectionTitle('💡 의외의 TMI'),
             const SizedBox(height: 6),
             Text(
-              data['tmi'] ?? '',
+              data['tmi']?.toString() ?? '',
               style: const TextStyle(
                 fontSize: 14,
                 height: 1.55,
@@ -536,8 +528,6 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
             const SizedBox(height: 24),
-
-            // 하단 수집(읽음 완료) 버튼
             SizedBox(
               width: double.infinity,
               height: 48,
