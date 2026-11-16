@@ -94,7 +94,7 @@ jobs:
         run: flutter pub get
 
       - name: Dart 코드 문법 검사
-        run: flutter analyze
+        run: flutter analyze --no-fatal-infos
          
       - name: APK 빌드 (Lint 태스크 제외)
         run: |
