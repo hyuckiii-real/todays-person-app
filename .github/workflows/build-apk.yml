@@ -26,6 +26,7 @@ jobs:
       - name: 안드로이드 플랫폼 복원 및 AdMob 세팅
         run: |
           flutter create . --org com.todaysx --platforms=android --project-name todays_person
+          rm -rf test
 
           python3 - << 'PYEOF'
           import os, re
