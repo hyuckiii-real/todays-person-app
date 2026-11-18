@@ -125,7 +125,6 @@ class _HomeScreenState extends State<HomeScreen> {
           _isLoading = false;
         });
       }
-      // 캐시 저장일과 JSON 내부 date가 모두 오늘(todayKst)일 때만 네트워크 호출 생략
       if (cachedDate == todayKst && cachedData['date'] == todayKst) {
         return;
       }
@@ -159,7 +158,6 @@ class _HomeScreenState extends State<HomeScreen> {
         jsonDecode(utf8.decode(response.bodyBytes)) as Map,
       );
 
-      // 받아온 JSON의 date 기준으로 캐시 저장 (새벽 갱신 전일 경우 구데이터가 오늘 날짜로 캐싱되는 현상 방지)
       final dataDate = data['date']?.toString() ?? todayKst;
       await prefs.setString('cached_person_date', dataDate);
       await prefs.setString('cached_person_json', jsonEncode(data));
