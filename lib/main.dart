@@ -42,11 +42,11 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  // 1순위: 초고속 CDN 주소 / 2순위: GitHub Raw 원본 주소
-  static const String _cdnUrl =
-      'https://cdn.jsdelivr.net/gh/hyuckiii-real/todays-person-data@main/today.json';
+  // 1순위: 커밋 직후 즉시 반영되는 GitHub Raw 주소 / 2순위: CDN 폴백 주소
   static const String _rawUrl =
       'https://raw.githubusercontent.com/hyuckiii-real/todays-person-data/main/today.json';
+  static const String _cdnUrl =
+      'https://cdn.jsdelivr.net/gh/hyuckiii-real/todays-person-data@main/today.json';
 
   static const String _bannerAdUnitId =
       'ca-app-pub-3940256099942544/6300978111';
@@ -125,7 +125,8 @@ class _HomeScreenState extends State<HomeScreen> {
           _isLoading = false;
         });
       }
-      if (cachedDate == todayKst) {
+      // 캐시 저장일과 JSON 내부 date가 모두 오늘(todayKst)일 때만 네트워크 호출 생략
+      if (cachedDate == todayKst && cachedData['date'] == todayKst) {
         return;
       }
     }
@@ -136,14 +137,14 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<http.Response> _requestWithFallback() async {
     try {
       final res = await http
-          .get(Uri.parse(_cdnUrl))
-          .timeout(const Duration(seconds: 3));
+          .get(Uri.parse(_rawUrl))
+          .timeout(const Duration(seconds: 4));
       if (res.statusCode == 200) return res;
     } catch (_) {}
 
     return await http
-        .get(Uri.parse(_rawUrl))
-        .timeout(const Duration(seconds: 5));
+        .get(Uri.parse(_cdnUrl))
+        .timeout(const Duration(seconds: 4));
   }
 
   Future<void> _fetchLatestPerson(
@@ -158,7 +159,9 @@ class _HomeScreenState extends State<HomeScreen> {
         jsonDecode(utf8.decode(response.bodyBytes)) as Map,
       );
 
-      await prefs.setString('cached_person_date', todayKst);
+      // 받아온 JSON의 date 기준으로 캐시 저장 (새벽 갱신 전일 경우 구데이터가 오늘 날짜로 캐싱되는 현상 방지)
+      final dataDate = data['date']?.toString() ?? todayKst;
+      await prefs.setString('cached_person_date', dataDate);
       await prefs.setString('cached_person_json', jsonEncode(data));
 
       final existsIdx =
